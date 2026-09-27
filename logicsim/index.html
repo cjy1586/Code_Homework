@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta content="text/html;charset=utf-8" http-equiv="content-type" />
+    <meta content="IE=edge" http-equiv="X-UA-Compatible" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LogicSim · 逻辑表达式可视化</title>
+
+    <link rel="stylesheet" type="text/css" href="lib/joint.css" />
+    <link rel="stylesheet" type="text/css" href="style.css" />
+
+    <!-- dependencies -->
+    <script src="lib/jquery.min.js"></script>
+    <script src="lib/lodash.min.js"></script>
+    <script src="lib/backbone.js"></script>
+    <script src="lib/graphlib.min.js"></script>
+    <script src="lib/dagre.min.js"></script>
+    <script src="lib/joint.js"></script>
+    <script src="LogicParser.js"></script>
+</head>
+
+<body>
+    <div class="joint-app">
+        <!-- ============ 顶部工具栏 ============ -->
+        <header class="app-header">
+            <div class="app-brand">
+                <div class="brand-logo" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+                        <path d="M4 5h6v4H4zM4 15h6v4H4z" stroke="currentColor" stroke-width="1.6" />
+                        <path d="M10 7h4a3 3 0 0 1 3 3v4a3 3 0 0 1-3 3h-4" stroke="currentColor" stroke-width="1.6" fill="none" />
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <h1>LogicSim</h1>
+                    <p>逻辑表达式 · 逆波兰 → 判定图 可视化</p>
+                </div>
+            </div>
+
+            <div class="mini-map" title="画布总览">
+                <div id="mini-paper"></div>
+                <div id="mini-view">
+                    <div id="mini-resize"></div>
+                </div>
+                <span class="mini-map-label">画布总览</span>
+            </div>
+
+            <div class="title-container">
+                <!-- 卡 1：解析 -->
+                <section class="card card-parse">
+                    <div class="card-head">
+                        <h2>逆波兰表达式</h2>
+                        <span class="tag tag-primary">RPN</span>
+                    </div>
+                    <div class="op-row" role="toolbar" aria-label="逻辑操作符">
+                        <button class="op-chip" title="逻辑与 AND" onclick="insertOp(' . ')">∧ <small>.</small></button>
+                        <button class="op-chip" title="逻辑或 OR" onclick="insertOp(' , ')">∨ <small>,</small></button>
+                        <button class="op-chip" title="逻辑非 NOT" onclick="insertOp(' < ')">¬ <small>&lt;</small></button>
+                        <button class="op-chip" title="逻辑推出 IMPLY" onclick="insertOp(' > ')">→ <small>&gt;</small></button>
+                        <button class="op-chip" title="等价/同或 EQUAL" onclick="insertOp(' = ')">↔ <small>=</small></button>
+                        <button class="op-chip op-chip-quant" title="全称量词 ∀" onclick="insertOp(' ∀ ')">∀ <small>全称</small></button>
+                        <button class="op-chip op-chip-quant" title="存在量词 ∃" onclick="insertOp(' ∃ ')">∃ <small>存在</small></button>
+                    </div>
+                    <textarea id="ReversePol" spellcheck="false" placeholder="例如：a b . fe >  （a 与 b 推出 fe）"></textarea>
+                    <div class="btn-row">
+                        <button class="btn btn-primary" onclick="app.parseLogic()">解析文本</button>
+                        <button class="btn btn-ghost" onclick="fillExample('a b . fe >')">示例 a∧b→fe</button>
+                        <button class="btn btn-ghost" onclick="fillExample('a b , a ∃')">示例 ∃a.(a∨b)</button>
+                        <button class="btn btn-ghost" onclick="fillExample('a b . c ∀')">示例 ∀c.(a∧b)</button>
+                    </div>
+                </section>
+
+                <!-- 卡 2：图模型 -->
+                <section class="card card-model">
+                    <div class="card-head">
+                        <h2>图模型 JSON</h2>
+                        <span class="tag tag-secondary">Model</span>
+                    </div>
+                    <div class="file-row">
+                        <label class="btn btn-outline btn-file">
+                            载入文本
+                            <input type="file" id="fileToLoad" />
+                        </label>
+                        <button class="btn btn-outline" onclick="app.saveTextAsFile()">保存文本</button>
+                        <input class="input input-file-name" id="inputFileNameToSaveAs" value="默认保存名称" />
+                    </div>
+                    <textarea id="myModel" spellcheck="false">{"nodeArray":[],"linkArray":[]}</textarea>
+                    <div class="btn-row">
+                        <button class="btn btn-primary" onclick="app.load()">文本转图</button>
+                        <button class="btn btn-secondary" onclick="app.save()">图转文本</button>
+                    </div>
+                </section>
+            </div>
+        </header>
+
+        <!-- ============ 主区域 ============ -->
+        <div class="app-body">
+            <div class="left-container"></div>
+
+            <div class="main-container">
+                <div id="paper-container">
+                    <div id="paper"></div>
+                </div>
+            </div>
+
+            <div id="app-resize">
+                <div class="resize-handle" onclick="app.ResizeBlock()"></div>
+            </div>
+
+            <aside class="right-container">
+                <section class="card inspector">
+                    <div class="card-head">
+                        <h2>元素属性</h2>
+                    </div>
+                    <label class="field-label" for="ERName">元素名称</label>
+                    <input class="input" type="text" id="ERName" />
+                    <label class="field-label" for="ERMemo">元素备注</label>
+                    <textarea class="input input-memo" id="ERMemo"></textarea>
+                    <button class="btn btn-primary btn-block" id="ERSetName" onclick="app.ChangeName()">保存修改</button>
+
+                    <label class="field-label" for="sheet3">元素列表</label>
+                    <select class="input" id="sheet3"></select>
+                </section>
+
+                <section class="card help">
+                    <div class="card-head">
+                        <h2>操作符说明</h2>
+                    </div>
+                    <div class="help-body">
+                        <table class="help-table">
+                            <thead>
+                                <tr><th>操作符</th><th>逆波兰写法</th><th>含义</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><b>.</b></td><td>a b .</td><td>逻辑与 a∧b</td></tr>
+                                <tr><td><b>,</b></td><td>a b ,</td><td>逻辑或 a∨b</td></tr>
+                                <tr><td><b>&lt;</b></td><td>a &lt;</td><td>逻辑非 ¬a</td></tr>
+                                <tr><td><b>&gt;</b></td><td>a b &gt;</td><td>逻辑推出 a→b</td></tr>
+                                <tr><td><b>=</b></td><td>a b =</td><td>等价/同或 a↔b</td></tr>
+                                <tr class="help-quant"><td><b>∀</b></td><td>E x ∀</td><td>全称量词 ∀x.E</td></tr>
+                                <tr class="help-quant"><td><b>∃</b></td><td>E x ∃</td><td>存在量词 ∃x.E</td></tr>
+                            </tbody>
+                        </table>
+                        <p class="help-note">
+                            量词语义：<br />
+                            ∀x.E = E[x:=0] ∧ E[x:=1]<br />
+                            ∃x.E = E[x:=0] ∨ E[x:=1]
+                        </p>
+                    </div>
+                </section>
+            </aside>
+
+            <footer class="bottom-container">
+                <p id="status">图模型已就绪，可输入逆波兰表达式开始。</p>
+            </footer>
+        </div>
+    </div>
+
+    <script>
+        // 在光标处插入操作符
+        function insertOp(op) {
+            var ta = document.getElementById('ReversePol');
+            var start = ta.selectionStart;
+            var end = ta.selectionEnd;
+            ta.value = ta.value.slice(0, start) + op + ta.value.slice(end);
+            var pos = start + op.length;
+            ta.focus();
+            ta.setSelectionRange(pos, pos);
+        }
+
+        // 填充示例并直接解析
+        function fillExample(expr) {
+            document.getElementById('ReversePol').value = expr;
+            app.parseLogic();
+        }
+    </script>
+    <script src="ViewGen.js"></script>
+</body>
+
+</html>
